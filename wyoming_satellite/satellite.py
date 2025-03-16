@@ -49,6 +49,7 @@ _LOGGER = logging.getLogger()
 
 _PONG_TIMEOUT: Final = 5
 _PING_SEND_DELAY: Final = 2
+_STAT_SEND_DELAY: Final = 60
 _WAKE_INFO_TIMEOUT: Final = 2
 
 
@@ -92,6 +93,8 @@ class SatelliteBase:
         self._ping_server_enabled: bool = False
         self._pong_received_event = asyncio.Event()
         self._ping_server_task: Optional[asyncio.Task] = None
+        self._send_system_stats_task: Optional[asyncio.Task] = None
+        self._send_stats_enabled : bool = True
 
         self.microphone_muted = False
         self._unmute_microphone_task: Optional[asyncio.Task] = None
@@ -187,6 +190,63 @@ class SatelliteBase:
             else:
                 _LOGGER.exception("Unexpected error sending event to server")
 
+    def _enable_system_stats(self) -> None:
+        _LOGGER.warning("In _enable_system_stats")
+        self._send_system_stats_task = asyncio.create_task(self._send_stats_to_server(), name="ping")
+
+    def _disable_system_stats(self) -> None:
+        _LOGGER.warning("In _disable_system_stats")
+        if self._send_system_stats_task is not None:
+            self._send_system_stats_task.cancel()
+            self._send_system_stats_task = None
+
+    async def _send_stats_to_server(self) -> None:
+        _LOGGER.warning("Start _send_stats_to_server")
+        try:
+            while self.is_running:
+                _LOGGER.warning("_send_stats_to_server: Sleeping for %s", _STAT_SEND_DELAY)
+                await asyncio.sleep(_STAT_SEND_DELAY)
+                if (self.server_id is None) or (not self._send_stats_enabled):
+                    _LOGGER.warning("_send_stats_to_server: Not sending")
+                    # No server connected
+                    continue
+
+                import psutil
+                import os
+                cpu_times = psutil.cpu_times() #._asdict()
+                loadavg = psutil.getloadavg()
+                cpu_count = psutil.cpu_count()
+                virtual_memory = psutil.virtual_memory()
+                main_disk = psutil.disk_usage(os.path.abspath('.').split(os.path.sep)[0]+os.path.sep)
+                #disks = [(part, psutil.diskusage(part.mountpoint)) for part in psutil.disk_partitions(all=False) if 'cdrom' in part.opts or not part.fstype]
+                temperatures = psutil.sensors_temperatures()
+                fans = psutil.sensors_fans()
+                battery = psutil.sensors_battery()
+                boot_time = psutil.boot_time()
+
+                data = {
+                    "boot_time": boot_time,
+                    "cpu_times": cpu_times._asdict(),
+                    "load_avg": loadavg,
+                    "cpu_count": cpu_count,
+                    "vmem": virtual_memory._asdict(),
+                    "disks": main_disk._asdict(),
+                }
+
+                if len(temperatures) > 0:
+                    data["temperature"] = next(iter(temperatures.values()))[0]._asdict()
+                if len(fans) > 0:
+                    data["fans"] = next(iter(fans.values()))[0]._asdict()
+                if battery:
+                    data["battery"] = battery._asdict()
+                
+                _LOGGER.warning("_send_stats_to_server: Sending %s", data)
+                await self.event_to_server(Event("systemstats", data=data))
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            _LOGGER.exception("Unexpected error in ping server task", exc_info=exc)
+    
     def _enable_ping(self) -> None:
         self._ping_server_enabled = True
         self._ping_server_task = asyncio.create_task(self._ping_server(), name="ping")
@@ -235,6 +295,8 @@ class SatelliteBase:
 
     async def started(self) -> None:
         """Called when satellite has started."""
+        _LOGGER.warning("Calling system stats enable")
+        self._enable_system_stats()
 
     async def _stop(self) -> None:
         """Disconnect from services."""
@@ -243,6 +305,7 @@ class SatelliteBase:
 
         await self._disconnect_from_services()
         self._disable_ping()
+        self._disable_system_stats()
         self.state = State.STOPPED
 
     async def stopped(self) -> None:
