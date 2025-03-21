@@ -204,8 +204,8 @@ class SatelliteBase:
         _LOGGER.warning("Start _send_stats_to_server")
         try:
             while self.is_running:
-                _LOGGER.warning("_send_stats_to_server: Sleeping for %s", _STAT_SEND_DELAY)
-                await asyncio.sleep(_STAT_SEND_DELAY)
+                _LOGGER.warning("_send_stats_to_server: Sleeping for %s", self.settings.send_stats_timeout)
+                await asyncio.sleep(self.settings.send_stats_timeout)
                 if (self.server_id is None) or (not self._send_stats_enabled):
                     _LOGGER.warning("_send_stats_to_server: Not sending")
                     # No server connected
@@ -295,8 +295,9 @@ class SatelliteBase:
 
     async def started(self) -> None:
         """Called when satellite has started."""
-        _LOGGER.warning("Calling system stats enable")
-        self._enable_system_stats()
+        if self.settings.send_stats_timeout > 0.0:
+            _LOGGER.warning("Calling system stats enable")
+            self._enable_system_stats()
 
     async def _stop(self) -> None:
         """Disconnect from services."""

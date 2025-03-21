@@ -297,6 +297,12 @@ async def main() -> None:
         version=__version__,
         help="Print version and exit",
     )
+    parser.add_argument(
+        "--send-stats-seconds",
+        type=float,
+        default=60.0,
+        help="Seconds after which to send the current stats to the server. Set to 0 to disable (default: 60)",
+    )
     args = parser.parse_args()
 
     # Validate args
@@ -425,6 +431,7 @@ async def main() -> None:
             finished_wav_delay=args.timer_finished_wav_repeat[1],
         ),
         debug_recording_dir=args.debug_recording_dir,
+        send_stats_timeout=args.send_stats_seconds,
     )
 
     satellite: SatelliteBase

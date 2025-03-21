@@ -212,5 +212,7 @@ class SatelliteSettings:
 
     restart_timeout: float = 5.0
 
+    send_stats_timeout: float = 60.0
+
     debug_recording_dir: Optional[Path] = None
     """Path to directory where debug audio is written."""
